@@ -233,8 +233,8 @@ with col_inputs:
     claim_count = st.slider("Prior Inpatient Claims Count", min_value=0, max_value=10, value=1)
     
     if claim_count > 0:
-        total_pmt = st.number_input("Total Prior Inpatient Claim Amount ($)", min_value=0.0, max_value=150000.0, value=12000.0, step=1000.0)
-        primary_payer_pmt = st.number_input("Total Primary Payer Paid Amount ($)", min_value=0.0, max_value=50000.0, value=1500.0, step=100.0)
+        total_pmt = st.number_input("Total Prior Inpatient Claim Amount (₹)", min_value=0.0, max_value=12500000.0, value=1000000.0, step=50000.0)
+        primary_payer_pmt = st.number_input("Total Primary Payer Paid Amount (₹)", min_value=0.0, max_value=4000000.0, value=125000.0, step=10000.0)
         avg_duration = st.slider("Average Claim Duration (Days)", min_value=1, max_value=30, value=6)
     else:
         total_pmt = 0.0
@@ -291,7 +291,7 @@ with col_results:
     st.markdown(f"""
     <div class="metric-card">
         <span class="metric-label">Active Predictor: {selected_model_name if "Best" not in selected_model_name else f"Best Model ({model_display_name})"}</span>
-        <div class="metric-val">${predicted_cost:,.2f}</div>
+        <div class="metric-val">₹{predicted_cost:,.2f}</div>
         <span style="color: #8892B0; font-size: 0.85rem;">Estimated Total Annual Medicare Cost (Reimbursement + Copays)</span>
     </div>
     """, unsafe_allow_html=True)
@@ -307,8 +307,8 @@ with col_results:
             
             st.markdown("#### 📈 Model Test Performance Metrics")
             m_col1, m_col2, m_col3 = st.columns(3)
-            m_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
-            m_col2.metric("Root Mean Squared Error (RMSE)", f"${rmse_val:,.2f}")
+            m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
+            m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
             m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
             st.markdown("---")
             

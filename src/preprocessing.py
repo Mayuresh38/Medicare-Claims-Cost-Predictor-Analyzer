@@ -30,6 +30,16 @@ def preprocess_beneficiaries(bene_df):
         if col in df.columns:
             df[col] = (df[col] == 1).astype(int)
             
+    # Convert dollar values to Indian Rupees (INR): 1 USD = 83 INR
+    cost_cols = [
+        "MEDREIMB_IP", "BENRES_IP", "PPPYMT_IP",
+        "MEDREIMB_OP", "BENRES_OP", "PPPYMT_OP",
+        "MEDREIMB_CAR", "BENRES_CAR", "PPPYMT_CAR"
+    ]
+    for col in cost_cols:
+        if col in df.columns:
+            df[col] = df[col] * 83.0
+            
     # Calculate total annual costs (Target Variable)
     # Target = Medicare Reimbursement + Beneficiary Responsibility for Inpatient + Outpatient + Carrier
     df["TOTAL_ANNUAL_COST"] = (
@@ -55,9 +65,9 @@ def preprocess_claims(ip_df):
     df["CLAIM_DURATION"] = (df["CLM_THRU_DT"] - df["CLM_FROM_DT"]).dt.days
     df["CLAIM_DURATION"] = df["CLAIM_DURATION"].clip(lower=0) # ensure non-negative
     
-    # Default numeric fills
-    df["CLM_PMT_AMT"] = df["CLM_PMT_AMT"].fillna(0.0)
-    df["NCH_PRMRY_PYR_CLM_PD_AMT"] = df["NCH_PRMRY_PYR_CLM_PD_AMT"].fillna(0.0)
+    # Default numeric fills and convert dollar values to INR
+    df["CLM_PMT_AMT"] = df["CLM_PMT_AMT"].fillna(0.0) * 83.0
+    df["NCH_PRMRY_PYR_CLM_PD_AMT"] = df["NCH_PRMRY_PYR_CLM_PD_AMT"].fillna(0.0) * 83.0
     
     return df
 

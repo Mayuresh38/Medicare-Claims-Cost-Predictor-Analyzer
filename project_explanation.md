@@ -81,14 +81,14 @@ To keep the codebase simple and focused, we selected exactly **one Regression An
 ## 5. Model Performance Results
 After running the updated training pipeline, the models achieved the following test set metrics:
 
-| Model | MAE ($) | RMSE ($) | $R^2$ Score |
+| Model | MAE (₹) | RMSE (₹) | $R^2$ Score |
 | :--- | :---: | :---: | :---: |
-| **Ridge Regression** | **999.19** | **1,340.14** | **0.9941** |
-| **Keras ANN (Deep Learning)** | **1,904.46** | **2,611.06** | **0.9778** |
+| **Ridge Regression** | **82,932.69** | **111,231.28** | **0.9941** |
+| **Keras ANN (Deep Learning)** | **354,877.15** | **628,328.82** | **0.8131** |
 
 ### Analysis
 - **Ridge Regression** achieves an outstanding $R^2$ score of **99.41%**, indicating that the linear relationships (comorbidities, age risk, and claim sums) account for almost all variance in the target cost.
-- **Keras ANN** achieves a high $R^2$ score of **97.78%**, showing that it successfully learned the patterns, though L2-regularized linear regression remains the most optimal and stable solution for this structured data due to the direct summation relationship of the target.
+- **Keras ANN** achieves an $R^2$ score of **81.31%**, showing that it successfully learned the patterns, though L2-regularized linear regression remains the most optimal and stable solution for this structured data due to the direct summation relationship of the target.
 
 ---
 
