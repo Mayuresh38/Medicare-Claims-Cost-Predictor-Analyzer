@@ -46,39 +46,68 @@ st.markdown("""
     
     .subtitle {
         font-size: 1.2rem;
-        color: #6B7280;
+        color: #8892B0;
         margin-bottom: 2rem;
     }
     
     .card {
-        background: #FFFFFF;
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
         border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-        border: 1px solid #E5E7EB;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid rgba(128, 128, 128, 0.15);
         margin-bottom: 1.5rem;
+    }
+
+    .card h1, .card h2, .card h3, .card h4, .card h5, .card h6 {
+        color: var(--text-color) !important;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
     }
     
     .dark-card {
-        background: #1F2937;
+        background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
         color: #F9FAFB;
         border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
         margin-bottom: 1.5rem;
+    }
+
+    .dark-card h1, .dark-card h2, .dark-card h3, .dark-card h4, .dark-card h5, .dark-card h6 {
+        color: #F9FAFB !important;
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+    }
+
+    .metric-card {
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        border-left: 6px solid #10B981;
+        border-top: 1px solid rgba(128, 128, 128, 0.15);
+        border-right: 1px solid rgba(128, 128, 128, 0.15);
+        border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     }
     
     .metric-val {
-        font-size: 2.2rem;
+        font-size: 2.4rem;
         font-weight: 700;
         color: #10B981;
+        margin: 0.3rem 0;
     }
     
     .metric-label {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
-        color: #9CA3AF;
+        color: #8892B0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -260,10 +289,10 @@ with col_results:
     
     # Display cost metric card
     st.markdown(f"""
-    <div class="card" style="text-align: center; border-left: 6px solid #10B981; margin-bottom: 1rem;">
+    <div class="metric-card">
         <span class="metric-label">Active Predictor: {selected_model_name if "Best" not in selected_model_name else f"Best Model ({model_display_name})"}</span>
         <div class="metric-val">${predicted_cost:,.2f}</div>
-        <span style="color: #6B7280; font-size: 0.85rem;">Estimated Total Annual Medicare Cost (Reimbursement + Copays)</span>
+        <span style="color: #8892B0; font-size: 0.85rem;">Estimated Total Annual Medicare Cost (Reimbursement + Copays)</span>
     </div>
     """, unsafe_allow_html=True)
     
