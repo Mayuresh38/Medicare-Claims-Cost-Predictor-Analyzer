@@ -16,23 +16,21 @@ def build_ann_model(input_dim, learning_rate=0.001, dropout_rate=0.2, units_1=12
     Accepts hyperparameters for tuning.
     """
     inputs = layers.Input(shape=(input_dim,), name="tabular_inputs")
-    x = layers.Dense(units_1, activation="relu")(inputs)
-    x = layers.BatchNormalization()(x)
+    x = layers.Dense(units_1, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(inputs)
     x = layers.Dropout(dropout_rate)(x)
     
-    x = layers.Dense(units_2, activation="relu")(x)
-    x = layers.BatchNormalization()(x)
+    x = layers.Dense(units_2, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
     x = layers.Dropout(dropout_rate)(x)
     
-    x = layers.Dense(units_3, activation="relu")(x)
+    x = layers.Dense(units_3, activation="relu", kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
     
     outputs = layers.Dense(1, activation="linear", name="cost_prediction")(x)
     
     model = Model(inputs=inputs, outputs=outputs, name="ANN_Cost_Predictor")
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-        loss="mean_absolute_error",
-        metrics=["mean_squared_error"]
+        loss="mean_squared_error",
+        metrics=["mean_absolute_error"]
     )
     return model
 

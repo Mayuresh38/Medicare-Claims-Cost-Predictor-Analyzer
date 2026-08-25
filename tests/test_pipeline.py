@@ -47,6 +47,7 @@ class TestPipeline(unittest.TestCase):
     def test_saved_models_exist(self):
         models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
         self.assertTrue(os.path.exists(os.path.join(models_dir, "scaler.pkl")))
+        self.assertTrue(os.path.exists(os.path.join(models_dir, "target_scaler.pkl")))
         self.assertTrue(os.path.exists(os.path.join(models_dir, "features.json")))
         self.assertTrue(os.path.exists(os.path.join(models_dir, "best_model_info.json")))
         self.assertTrue(os.path.exists(os.path.join(models_dir, "model_comparison.csv")))

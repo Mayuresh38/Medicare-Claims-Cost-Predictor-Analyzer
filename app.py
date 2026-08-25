@@ -10,12 +10,23 @@ import tensorflow as tf
 
 from src.explainability import get_shap_explainer, explain_single_prediction
 
+class KerasModelWrapper:
+    def __init__(self, model, target_scaler):
+        self.model = model
+        self.target_scaler = target_scaler
+    def predict(self, X):
+        preds_scaled = self.model.predict(X)
+        return self.target_scaler.inverse_transform(preds_scaled)
+    def __getattr__(self, name):
+        return getattr(self.model, name)
+
 # Paths
 MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "models"))
 COMP_CSV = os.path.join(MODELS_DIR, "model_comparison.csv")
 BEST_INFO_JSON = os.path.join(MODELS_DIR, "best_model_info.json")
 FEATURES_JSON = os.path.join(MODELS_DIR, "features.json")
 SCALER_PKL = os.path.join(MODELS_DIR, "scaler.pkl")
+TARGET_SCALER_PKL = os.path.join(MODELS_DIR, "target_scaler.pkl")
 
 # Styling Config
 st.set_page_config(
@@ -119,6 +130,7 @@ def is_pipeline_trained():
         os.path.exists(BEST_INFO_JSON) and
         os.path.exists(FEATURES_JSON) and
         os.path.exists(SCALER_PKL) and
+        os.path.exists(TARGET_SCALER_PKL) and
         os.path.exists(os.path.join(MODELS_DIR, "ridge_regression.pkl")) and
         os.path.exists(os.path.join(MODELS_DIR, "ann.keras"))
     )
@@ -132,13 +144,16 @@ def load_pipeline_artifacts():
         best_info = json.load(f)
     with open(SCALER_PKL, "rb") as f:
         scaler = pickle.load(f)
+    with open(TARGET_SCALER_PKL, "rb") as f:
+        target_scaler = pickle.load(f)
         
     # Load Ridge model
     with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "rb") as f:
         ridge_model = pickle.load(f)
         
     # Load ANN model
-    ann_model = tf.keras.models.load_model(os.path.join(MODELS_DIR, "ann.keras"))
+    ann_model_raw = tf.keras.models.load_model(os.path.join(MODELS_DIR, "ann.keras"))
+    ann_model = KerasModelWrapper(ann_model_raw, target_scaler)
     
     # Load best model
     best_file = best_info["best_model_file"]

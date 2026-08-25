@@ -7,6 +7,7 @@ import tensorflow as tf
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
 from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 
 from src.data_loader import load_or_create_dataset
 from src.features import build_tabular_features, PipelineScaler
@@ -49,6 +50,12 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
     with open(os.path.join(MODELS_DIR, "features.json"), "w") as f:
         json.dump({"features": feature_cols, "max_seq_len": max_seq_len}, f)
         
+    # Fit and save target scaler for Keras ANN
+    target_scaler = StandardScaler()
+    y_train_scaled = target_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
+    with open(os.path.join(MODELS_DIR, "target_scaler.pkl"), "wb") as f:
+        pickle.dump(target_scaler, f)
+        
     results = {}
     
     print("--- Phase 4: Training & Hyperparameter Tuning ---")
@@ -57,7 +64,7 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
     print("Tuning Ridge Regression...")
     ridge = Ridge()
     param_grid_ridge = {
-        'alpha': [0.01, 0.1, 1.0, 10.0, 100.0],
+        'alpha': [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0],
         'fit_intercept': [True, False]
     }
     grid_ridge = GridSearchCV(ridge, param_grid_ridge, cv=5, scoring='neg_mean_absolute_error', n_jobs=-1)
@@ -74,9 +81,9 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
     
     # 2. Keras ANN Hyperparameter Tuning
     print("Tuning Keras ANN...")
-    # Split training set to get validation set for hyperparameter tuning
+    # Split training set to get validation set for hyperparameter tuning, using scaled targets
     X_ann_tr, X_ann_val, y_ann_tr, y_ann_val = train_test_split(
-        X_tab_train_scaled, y_train, test_size=0.2, random_state=42
+        X_tab_train_scaled, y_train_scaled, test_size=0.2, random_state=42
     )
     
     ann_params_grid = []
@@ -105,7 +112,7 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
         # Train model with early stopping
         early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=3,
+            patience=10,
             restore_best_weights=True
         )
         
@@ -119,8 +126,10 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
         )
         
         # Evaluate on validation set
-        val_preds = model.predict(X_ann_val, verbose=0).flatten()
-        val_mae = mean_absolute_error(y_ann_val, val_preds)
+        val_preds_scaled = model.predict(X_ann_val, verbose=0).flatten()
+        val_preds = target_scaler.inverse_transform(val_preds_scaled.reshape(-1, 1)).flatten()
+        y_ann_val_orig = target_scaler.inverse_transform(y_ann_val.reshape(-1, 1)).flatten()
+        val_mae = mean_absolute_error(y_ann_val_orig, val_preds)
         print(f"  Validation MAE: {val_mae:.2f}")
         
         if val_mae < best_ann_val_mae:
@@ -131,7 +140,8 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
     print(f"Best ANN params: {best_ann_params} with Validation MAE: {best_ann_val_mae:.2f}")
     
     # Evaluate best ANN on test set
-    ann_preds = best_ann_model.predict(X_tab_test_scaled).flatten()
+    ann_preds_scaled = best_ann_model.predict(X_tab_test_scaled).flatten()
+    ann_preds = target_scaler.inverse_transform(ann_preds_scaled.reshape(-1, 1)).flatten()
     results["ANN"] = {
         "model": best_ann_model,
         "preds": ann_preds,
@@ -195,4 +205,4 @@ def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, e
     return comparison_df
 
 if __name__ == "__main__":
-    train_and_evaluate_pipeline(use_mock=False, num_bene=1000, num_claims=2000, epochs=15)
+    train_and_evaluate_pipeline(use_mock=False, num_bene=1000, num_claims=2000, epochs=80)
