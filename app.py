@@ -308,17 +308,23 @@ with col_results:
     if comp_df is not None:
         row = comp_df[comp_df["Model"] == model_display_name]
         if not row.empty:
-            mae_val = row.iloc[0]["MAE"]
-            rmse_val = row.iloc[0]["RMSE"]
-            r2_val = row.iloc[0]["R2 Score"]
-            rmsle_val = row.iloc[0]["RMSLE"]
+            mae_val = row.iloc[0].get("MAE", 0.0)
+            rmse_val = row.iloc[0].get("RMSE", 0.0)
+            r2_val = row.iloc[0].get("R2 Score", 0.0)
             
             st.markdown("#### 📈 Model Cross-Validation Performance Metrics")
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
-            m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
-            m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
-            m_col4.metric("RMSLE", f"{rmsle_val:.4f}")
+            if "RMSLE" in comp_df.columns:
+                rmsle_val = row.iloc[0].get("RMSLE", 0.0)
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
+                m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
+                m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
+                m_col4.metric("RMSLE", f"{rmsle_val:.4f}")
+            else:
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
+                m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
+                m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
             st.markdown("---")
             
     # Section: SHAP Explainability
