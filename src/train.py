@@ -7,6 +7,7 @@ import tensorflow as tf
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
 from sklearn.linear_model import Ridge
+from sklearn.compose import TransformedTargetRegressor
 from sklearn.preprocessing import StandardScaler
 
 from src.data_loader import load_or_create_dataset
@@ -46,16 +47,19 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
         X_train_scaled = scaler.fit_transform(X_train)
         X_val_scaled = scaler.transform(X_val)
         
-        # Target transformation
+        # Target transformation for ANN
         y_train_trans = np.log1p(y_train)
         y_val_trans = np.log1p(y_val)
         
-        # 1. Ridge Regression
-        ridge = Ridge(alpha=1.0)
-        ridge.fit(X_train_scaled, y_train_trans)
+        # 1. Ridge Regression with target scaling
+        ridge = TransformedTargetRegressor(
+            regressor=Ridge(alpha=1.0),
+            func=np.log1p,
+            inverse_func=np.expm1
+        )
+        ridge.fit(X_train_scaled, y_train)
         
-        ridge_pred_trans = ridge.predict(X_val_scaled)
-        ridge_pred = np.clip(np.expm1(ridge_pred_trans), 0, None)
+        ridge_pred = np.maximum(0, ridge.predict(X_val_scaled))
         
         # Calculate Ridge metrics
         r_mae = mean_absolute_error(y_val, ridge_pred)
@@ -93,7 +97,7 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
         )
         
         ann_pred_trans = ann.predict(X_val_scaled, verbose=0).flatten()
-        ann_pred = np.clip(np.expm1(ann_pred_trans), 0, None)
+        ann_pred = np.maximum(0, np.expm1(ann_pred_trans))
         
         # Calculate ANN metrics
         a_mae = mean_absolute_error(y_val, ann_pred)
@@ -152,15 +156,19 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     with open(os.path.join(MODELS_DIR, "target_scaler.pkl"), "wb") as f:
         pickle.dump(dummy_target_scaler, f)
         
-    # Train final Ridge model
-    y_trans = np.log1p(y.values)
-    final_ridge = Ridge(alpha=1.0)
-    final_ridge.fit(X_tab_scaled, y_trans)
+    # Train final Ridge model with target scaling
+    final_ridge = TransformedTargetRegressor(
+        regressor=Ridge(alpha=1.0),
+        func=np.log1p,
+        inverse_func=np.expm1
+    )
+    final_ridge.fit(X_tab_scaled, y.values)
     
     with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "wb") as f:
         pickle.dump(final_ridge, f)
         
     # Train final ANN model
+    y_trans = np.log1p(y.values)
     final_ann = build_ann_model(input_dim=X_tab_scaled.shape[1], learning_rate=0.001)
     
     # Split training set slightly just for validation callbacks to prevent overfitting

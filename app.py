@@ -11,12 +11,14 @@ import tensorflow as tf
 from src.explainability import get_shap_explainer, explain_single_prediction
 
 class Log1pModelWrapper:
-    def __init__(self, model):
+    def __init__(self, model, is_transformed_regressor=False):
         self.model = model
+        self.is_transformed_regressor = is_transformed_regressor
     def predict(self, X):
-        preds_log = self.model.predict(X)
-        # Handle single values or arrays
-        return np.expm1(preds_log)
+        preds = self.model.predict(X)
+        if self.is_transformed_regressor:
+            return np.maximum(0.0, preds)
+        return np.maximum(0.0, np.expm1(preds))
     def __getattr__(self, name):
         return getattr(self.model, name)
 
@@ -150,11 +152,11 @@ def load_pipeline_artifacts():
     # Load Ridge model
     with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "rb") as f:
         ridge_model_raw = pickle.load(f)
-    ridge_model = Log1pModelWrapper(ridge_model_raw)
+    ridge_model = Log1pModelWrapper(ridge_model_raw, is_transformed_regressor=True)
         
     # Load ANN model
     ann_model_raw = tf.keras.models.load_model(os.path.join(MODELS_DIR, "ann.keras"))
-    ann_model = Log1pModelWrapper(ann_model_raw)
+    ann_model = Log1pModelWrapper(ann_model_raw, is_transformed_regressor=False)
     
     # Load best model
     m_type = best_info["type"]
@@ -298,7 +300,7 @@ with col_results:
     st.markdown(f"""
     <div class="metric-card">
         <span class="metric-label">Active Predictor: {selected_model_name if "Best" not in selected_model_name else f"Best Model ({model_display_name})"}</span>
-        <div class="metric-val">₹{predicted_cost:,.2f}</div>
+        <div class="metric-val">${predicted_cost:,.2f}</div>
         <span style="color: #8892B0; font-size: 0.85rem;">Estimated Total Annual Medicare Cost (Reimbursement + Copays)</span>
     </div>
     """, unsafe_allow_html=True)
@@ -316,14 +318,14 @@ with col_results:
             if "RMSLE" in comp_df.columns:
                 rmsle_val = row.iloc[0].get("RMSLE", 0.0)
                 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
-                m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
+                m_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
+                m_col2.metric("Root Mean Squared Error (RMSE)", f"${rmse_val:,.2f}")
                 m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
                 m_col4.metric("RMSLE", f"{rmsle_val:.4f}")
             else:
                 m_col1, m_col2, m_col3 = st.columns(3)
-                m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
-                m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
+                m_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
+                m_col2.metric("Root Mean Squared Error (RMSE)", f"${rmse_val:,.2f}")
                 m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
             st.markdown("---")
             
