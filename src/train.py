@@ -4,204 +4,205 @@ import pickle
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from src.data_loader import load_or_create_dataset
 from src.features import build_tabular_features, PipelineScaler
-from src.models import (
-    build_regression_model,
-    build_ann_model
-)
+from src.models import build_regression_model, build_ann_model
 
 # Output directory for saved models/scalers
 MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-def train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, epochs=20):
+def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, epochs=80):
     """
-    Executes the simplified end-to-end training and comparison pipeline with hyperparameter tuning.
+    Executes the standardized 5-Fold Cross-Validation and training pipeline.
     """
     print("--- Phase 1: Ingesting and Integrating Data ---")
     bene_df, ip_df = load_or_create_dataset(use_mock=use_mock, num_bene=num_bene, num_claims=num_claims)
     
     print("--- Phase 2 & 3: Preprocessing & Feature Engineering ---")
-    # Tabular features and target
     X_tab, y, feature_cols = build_tabular_features(bene_df, ip_df)
-    max_seq_len = 5 # retained for backward compatibility with metadata files
+    max_seq_len = 5 # retained for backward compatibility
     
-    # Train-test split
-    indices = np.arange(len(y))
-    train_idx, test_idx = train_test_split(indices, test_size=0.2, random_state=42)
+    print("--- Phase 4: Standardized 5-Fold Cross-Validation ---")
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
     
-    X_tab_train, X_tab_test = X_tab.iloc[train_idx].reset_index(drop=True), X_tab.iloc[test_idx].reset_index(drop=True)
-    y_train, y_test = y.iloc[train_idx].values, y.iloc[test_idx].values
+    ridge_metrics = {'MAE': [], 'RMSE': [], 'R2': [], 'RMSLE': []}
+    ann_metrics = {'MAE': [], 'RMSE': [], 'R2': [], 'RMSLE': []}
     
-    # Scale tabular features
+    for fold, (train_idx, val_idx) in enumerate(kf.split(X_tab)):
+        print(f"Running Fold {fold + 1} / 5...")
+        
+        # Split
+        X_train, X_val = X_tab.iloc[train_idx], X_tab.iloc[val_idx]
+        y_train, y_val = y.iloc[train_idx].values, y.iloc[val_idx].values
+        
+        # Scale features
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        
+        # Target transformation
+        y_train_trans = np.log1p(y_train)
+        y_val_trans = np.log1p(y_val)
+        
+        # 1. Ridge Regression
+        ridge = Ridge(alpha=1.0)
+        ridge.fit(X_train_scaled, y_train_trans)
+        
+        ridge_pred_trans = ridge.predict(X_val_scaled)
+        ridge_pred = np.clip(np.expm1(ridge_pred_trans), 0, None)
+        
+        # Calculate Ridge metrics
+        r_mae = mean_absolute_error(y_val, ridge_pred)
+        r_rmse = root_mean_squared_error(y_val, ridge_pred)
+        r_r2 = r2_score(y_val, ridge_pred)
+        r_rmsle = np.sqrt(np.mean((np.log1p(y_val) - np.log1p(ridge_pred)) ** 2))
+        
+        ridge_metrics['MAE'].append(r_mae)
+        ridge_metrics['RMSE'].append(r_rmse)
+        ridge_metrics['R2'].append(r_r2)
+        ridge_metrics['RMSLE'].append(r_rmsle)
+        
+        # 2. Keras ANN
+        ann = build_ann_model(input_dim=X_train_scaled.shape[1], learning_rate=0.001)
+        
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=15,
+            restore_best_weights=True
+        )
+        lr_reducer = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-6
+        )
+        
+        ann.fit(
+            X_train_scaled, y_train_trans,
+            validation_data=(X_val_scaled, y_val_trans),
+            epochs=epochs,
+            batch_size=64,
+            callbacks=[early_stopping, lr_reducer],
+            verbose=0
+        )
+        
+        ann_pred_trans = ann.predict(X_val_scaled, verbose=0).flatten()
+        ann_pred = np.clip(np.expm1(ann_pred_trans), 0, None)
+        
+        # Calculate ANN metrics
+        a_mae = mean_absolute_error(y_val, ann_pred)
+        a_rmse = root_mean_squared_error(y_val, ann_pred)
+        a_r2 = r2_score(y_val, ann_pred)
+        a_rmsle = np.sqrt(np.mean((np.log1p(y_val) - np.log1p(ann_pred)) ** 2))
+        
+        ann_metrics['MAE'].append(a_mae)
+        ann_metrics['RMSE'].append(a_rmse)
+        ann_metrics['R2'].append(a_r2)
+        ann_metrics['RMSLE'].append(a_rmsle)
+        
+        print(f"  Ridge -> MAE: {r_mae:.2f}, R2: {r_r2:.4f}, RMSLE: {r_rmsle:.4f}")
+        print(f"  ANN   -> MAE: {a_mae:.2f}, R2: {a_r2:.4f}, RMSLE: {a_rmsle:.4f}")
+
+    print("--- Phase 5: Final Evaluation & Benchmarking ---")
+    avg_ridge = {k: np.mean(v) for k, v in ridge_metrics.items()}
+    avg_ann = {k: np.mean(v) for k, v in ann_metrics.items()}
+    
+    comparison_data = [
+        {
+            "Model": "Ridge Regression",
+            "MAE": round(avg_ridge['MAE'], 2),
+            "RMSE": round(avg_ridge['RMSE'], 2),
+            "R2 Score": round(avg_ridge['R2'], 4),
+            "RMSLE": round(avg_ridge['RMSLE'], 4)
+        },
+        {
+            "Model": "ANN",
+            "MAE": round(avg_ann['MAE'], 2),
+            "RMSE": round(avg_ann['RMSE'], 2),
+            "R2 Score": round(avg_ann['R2'], 4),
+            "RMSLE": round(avg_ann['RMSLE'], 4)
+        }
+    ]
+    comparison_df = pd.DataFrame(comparison_data)
+    comparison_df.to_csv(os.path.join(MODELS_DIR, "model_comparison.csv"), index=False)
+    
+    print("\nStandardized CV Benchmark Results:")
+    print(comparison_df)
+    
+    print("--- Phase 6: Training Deployed Models on All Data ---")
+    # Fit final feature scaler
     scaler = PipelineScaler()
-    X_tab_train_scaled = scaler.fit_transform(X_tab_train)
-    X_tab_test_scaled = scaler.transform(X_tab_test)
+    X_tab_scaled = scaler.fit_transform(X_tab)
     
-    # Save the scaler and features metadata
+    # Save the feature scaler and feature metadata
     with open(os.path.join(MODELS_DIR, "scaler.pkl"), "wb") as f:
         pickle.dump(scaler, f)
     with open(os.path.join(MODELS_DIR, "features.json"), "w") as f:
         json.dump({"features": feature_cols, "max_seq_len": max_seq_len}, f)
         
-    # Fit and save target scaler for Keras ANN
-    target_scaler = StandardScaler()
-    y_train_scaled = target_scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
+    # Save a dummy/empty target scaler to maintain backward compatibility
+    dummy_target_scaler = StandardScaler()
+    dummy_target_scaler.fit(y.values.reshape(-1, 1))
     with open(os.path.join(MODELS_DIR, "target_scaler.pkl"), "wb") as f:
-        pickle.dump(target_scaler, f)
+        pickle.dump(dummy_target_scaler, f)
         
-    results = {}
+    # Train final Ridge model
+    y_trans = np.log1p(y.values)
+    final_ridge = Ridge(alpha=1.0)
+    final_ridge.fit(X_tab_scaled, y_trans)
     
-    print("--- Phase 4: Training & Hyperparameter Tuning ---")
+    with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "wb") as f:
+        pickle.dump(final_ridge, f)
+        
+    # Train final ANN model
+    final_ann = build_ann_model(input_dim=X_tab_scaled.shape[1], learning_rate=0.001)
     
-    # 1. Ridge Regression Hyperparameter Tuning
-    print("Tuning Ridge Regression...")
-    ridge = Ridge()
-    param_grid_ridge = {
-        'alpha': [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0],
-        'fit_intercept': [True, False]
-    }
-    grid_ridge = GridSearchCV(ridge, param_grid_ridge, cv=5, scoring='neg_mean_absolute_error', n_jobs=-1)
-    grid_ridge.fit(X_tab_train_scaled, y_train)
-    best_ridge = grid_ridge.best_estimator_
-    print(f"Best Ridge params: {grid_ridge.best_params_}")
-    
-    ridge_preds = best_ridge.predict(X_tab_test_scaled)
-    results["Ridge Regression"] = {
-        "model": best_ridge,
-        "preds": ridge_preds,
-        "type": "sklearn"
-    }
-    
-    # 2. Keras ANN Hyperparameter Tuning
-    print("Tuning Keras ANN...")
-    # Split training set to get validation set for hyperparameter tuning, using scaled targets
-    X_ann_tr, X_ann_val, y_ann_tr, y_ann_val = train_test_split(
-        X_tab_train_scaled, y_train_scaled, test_size=0.2, random_state=42
+    # Split training set slightly just for validation callbacks to prevent overfitting
+    X_train_final, X_val_final, y_train_final, y_val_final = train_test_split(
+        X_tab_scaled, y_trans, test_size=0.1, random_state=42
     )
     
-    ann_params_grid = []
-    for lr in [0.001, 0.01]:
-        for do in [0.1, 0.3]:
-            for bs in [16, 64]:
-                ann_params_grid.append({
-                    'learning_rate': lr,
-                    'dropout_rate': do,
-                    'batch_size': bs
-                })
-                
-    best_ann_val_mae = float('inf')
-    best_ann_params = None
-    best_ann_model = None
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=15,
+        restore_best_weights=True
+    )
+    lr_reducer = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-6
+    )
     
-    for idx, params in enumerate(ann_params_grid):
-        print(f"Candidate {idx+1}/{len(ann_params_grid)}: {params}")
-        # Build model
-        model = build_ann_model(
-            input_dim=X_tab_train_scaled.shape[1],
-            learning_rate=params['learning_rate'],
-            dropout_rate=params['dropout_rate']
-        )
-        
-        # Train model with early stopping
-        early_stopping = tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss',
-            patience=10,
-            restore_best_weights=True
-        )
-        
-        model.fit(
-            X_ann_tr, y_ann_tr,
-            validation_data=(X_ann_val, y_ann_val),
-            epochs=epochs,
-            batch_size=params['batch_size'],
-            callbacks=[early_stopping],
-            verbose=0
-        )
-        
-        # Evaluate on validation set
-        val_preds_scaled = model.predict(X_ann_val, verbose=0).flatten()
-        val_preds = target_scaler.inverse_transform(val_preds_scaled.reshape(-1, 1)).flatten()
-        y_ann_val_orig = target_scaler.inverse_transform(y_ann_val.reshape(-1, 1)).flatten()
-        val_mae = mean_absolute_error(y_ann_val_orig, val_preds)
-        print(f"  Validation MAE: {val_mae:.2f}")
-        
-        if val_mae < best_ann_val_mae:
-            best_ann_val_mae = val_mae
-            best_ann_params = params
-            best_ann_model = model
-            
-    print(f"Best ANN params: {best_ann_params} with Validation MAE: {best_ann_val_mae:.2f}")
+    final_ann.fit(
+        X_train_final, y_train_final,
+        validation_data=(X_val_final, y_val_final),
+        epochs=epochs,
+        batch_size=64,
+        callbacks=[early_stopping, lr_reducer],
+        verbose=1
+    )
     
-    # Evaluate best ANN on test set
-    ann_preds_scaled = best_ann_model.predict(X_tab_test_scaled).flatten()
-    ann_preds = target_scaler.inverse_transform(ann_preds_scaled.reshape(-1, 1)).flatten()
-    results["ANN"] = {
-        "model": best_ann_model,
-        "preds": ann_preds,
-        "type": "keras"
-    }
+    final_ann.save(os.path.join(MODELS_DIR, "ann.keras"))
     
-    print("--- Phase 5: Model Comparison ---")
-    comparison_data = []
-    best_r2 = -float("inf")
-    best_model_name = None
-    
-    for name, r in results.items():
-        preds = r["preds"]
-        # Ensure non-negative cost predictions
-        preds = np.clip(preds, a_min=0, a_max=None)
-        
-        mae = mean_absolute_error(y_test, preds)
-        rmse = root_mean_squared_error(y_test, preds)
-        r2 = r2_score(y_test, preds)
-        
-        comparison_data.append({
-            "Model": name,
-            "MAE": round(mae, 2),
-            "RMSE": round(rmse, 2),
-            "R2 Score": round(r2, 4)
-        })
-        print(f"{name} -> MAE: {mae:.2f}, RMSE: {rmse:.2f}, R2: {r2:.4f}")
-        
-        if r2 > best_r2:
-            best_r2 = r2
-            best_model_name = name
-            
-    comparison_df = pd.DataFrame(comparison_data)
-    comparison_df.to_csv(os.path.join(MODELS_DIR, "model_comparison.csv"), index=False)
-    
-    print(f"\nBest Model: {best_model_name} with R2: {best_r2:.4f}")
-    
-    # Save the models
-    for name, r in results.items():
-        model = r["model"]
-        m_type = r["type"]
-        safe_name = name.lower().replace(" ", "_").replace("/", "_")
-        
-        if m_type == "sklearn":
-            with open(os.path.join(MODELS_DIR, f"{safe_name}.pkl"), "wb") as f:
-                pickle.dump(model, f)
-        elif m_type == "keras":
-            model.save(os.path.join(MODELS_DIR, f"{safe_name}.keras"))
-            
-    # Copy best model to a generic "best_model" target
-    best_safe_name = best_model_name.lower().replace(" ", "_").replace("/", "_")
+    # Identify the best model based on cross-validated R2 score
+    best_model_name = "ANN" if avg_ann['R2'] >= avg_ridge['R2'] else "Ridge Regression"
+    best_safe_name = best_model_name.lower().replace(" ", "_")
     best_info = {
         "best_model_name": best_model_name,
         "best_model_file": f"{best_safe_name}",
-        "type": results[best_model_name]["type"]
+        "type": "keras" if best_model_name == "ANN" else "sklearn"
     }
     with open(os.path.join(MODELS_DIR, "best_model_info.json"), "w") as f:
         json.dump(best_info, f)
         
-    print(f"All models and comparison statistics saved to: {MODELS_DIR}")
+    print(f"Training completed successfully! Best model: {best_model_name}")
     return comparison_df
 
 if __name__ == "__main__":

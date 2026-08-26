@@ -10,13 +10,13 @@ import tensorflow as tf
 
 from src.explainability import get_shap_explainer, explain_single_prediction
 
-class KerasModelWrapper:
-    def __init__(self, model, target_scaler):
+class Log1pModelWrapper:
+    def __init__(self, model):
         self.model = model
-        self.target_scaler = target_scaler
     def predict(self, X):
-        preds_scaled = self.model.predict(X)
-        return self.target_scaler.inverse_transform(preds_scaled)
+        preds_log = self.model.predict(X)
+        # Handle single values or arrays
+        return np.expm1(preds_log)
     def __getattr__(self, name):
         return getattr(self.model, name)
 
@@ -149,14 +149,14 @@ def load_pipeline_artifacts():
         
     # Load Ridge model
     with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "rb") as f:
-        ridge_model = pickle.load(f)
+        ridge_model_raw = pickle.load(f)
+    ridge_model = Log1pModelWrapper(ridge_model_raw)
         
     # Load ANN model
     ann_model_raw = tf.keras.models.load_model(os.path.join(MODELS_DIR, "ann.keras"))
-    ann_model = KerasModelWrapper(ann_model_raw, target_scaler)
+    ann_model = Log1pModelWrapper(ann_model_raw)
     
     # Load best model
-    best_file = best_info["best_model_file"]
     m_type = best_info["type"]
     best_model = ann_model if m_type == "keras" else ridge_model
         
@@ -248,12 +248,8 @@ with col_inputs:
     claim_count = st.slider("Prior Inpatient Claims Count", min_value=0, max_value=10, value=1)
     
     if claim_count > 0:
-        total_pmt = st.number_input("Total Prior Inpatient Claim Amount (₹)", min_value=0.0, max_value=12500000.0, value=1000000.0, step=50000.0)
-        primary_payer_pmt = st.number_input("Total Primary Payer Paid Amount (₹)", min_value=0.0, max_value=4000000.0, value=125000.0, step=10000.0)
         avg_duration = st.slider("Average Claim Duration (Days)", min_value=1, max_value=30, value=6)
     else:
-        total_pmt = 0.0
-        primary_payer_pmt = 0.0
         avg_duration = 0.0
 
 # Map inputs to features
@@ -277,11 +273,7 @@ for col, val in selected_conditions.items():
     
 input_dict.update({
     "TOTAL_CLAIM_COUNT": claim_count,
-    "TOTAL_CLAIM_PMT": total_pmt,
-    "AVG_CLAIM_PMT": total_pmt / claim_count if claim_count > 0 else 0.0,
-    "MAX_CLAIM_PMT": total_pmt / claim_count if claim_count > 0 else 0.0,
-    "AVG_CLAIM_DURATION": avg_duration,
-    "TOTAL_PRIMARY_PAYER_PMT": primary_payer_pmt
+    "AVG_CLAIM_DURATION": avg_duration
 })
 
 # Make sure all features are aligned in the correct order
@@ -319,12 +311,14 @@ with col_results:
             mae_val = row.iloc[0]["MAE"]
             rmse_val = row.iloc[0]["RMSE"]
             r2_val = row.iloc[0]["R2 Score"]
+            rmsle_val = row.iloc[0]["RMSLE"]
             
-            st.markdown("#### 📈 Model Test Performance Metrics")
-            m_col1, m_col2, m_col3 = st.columns(3)
+            st.markdown("#### 📈 Model Cross-Validation Performance Metrics")
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
             m_col1.metric("Mean Absolute Error (MAE)", f"₹{mae_val:,.2f}")
             m_col2.metric("Root Mean Squared Error (RMSE)", f"₹{rmse_val:,.2f}")
             m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
+            m_col4.metric("RMSLE", f"{rmsle_val:.4f}")
             st.markdown("---")
             
     # Section: SHAP Explainability

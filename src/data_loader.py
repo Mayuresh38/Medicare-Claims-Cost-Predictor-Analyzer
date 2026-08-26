@@ -78,34 +78,14 @@ def generate_mock_beneficiary_data(num_records=1000):
 def generate_mock_inpatient_claims(beneficiary_df, num_claims=3000):
     """
     Generates mock Inpatient Claims data linked to the beneficiary IDs,
-    weighted by patient risk score.
+    using non-deterministic random distributions.
     """
     np.random.seed(42)
     bene_ids = beneficiary_df["DESYNPUF_ID"].values
     
-    # Calculate risk score for each beneficiary to determine claims probability
-    birth_years = pd.to_datetime(beneficiary_df["BENE_BIRTH_DT"], format="%Y%m%d", errors="coerce").dt.year
-    ages = 2008 - birth_years
-    ages = ages.fillna(75).values
-    
-    chronic_cols = [
-        "SP_ALZHDMTA", "SP_CHF", "SP_CHRNKIDN", "SP_CNCR", "SP_COPD", 
-        "SP_DEPRESSN", "SP_DIABETES", "SP_ISCHMCHT", "SP_OSTEOPRS", "SP_RA_OA", "SP_STRKETIA"
-    ]
-    num_chronic = (beneficiary_df[chronic_cols] == 1).sum(axis=1).values
-    sex = beneficiary_df["BENE_SEX_IDENT_CD"].values
-    
-    # Older, female (slightly), and more chronic conditions -> higher risk
-    risk_scores = 1.0 + (ages - 65) * 0.03 + 0.3 * (sex == 2) + 0.8 * num_chronic
-    risk_scores = np.clip(risk_scores, a_min=0.1, a_max=None)
-    
-    # Selection probabilities proportional to risk score
-    probs = risk_scores / np.sum(risk_scores)
-    
-    # Select random beneficiaries weighted by risk
-    chosen_indices = np.random.choice(len(beneficiary_df), size=num_claims, p=probs)
+    # Select random beneficiaries uniformly
+    chosen_indices = np.random.choice(len(beneficiary_df), size=num_claims)
     chosen_benes = beneficiary_df.iloc[chosen_indices]["DESYNPUF_ID"].values
-    chosen_risks = risk_scores[chosen_indices]
     
     claim_ids = [f"CLM_ID_{i:06d}" for i in range(1, num_claims + 1)]
     
@@ -128,8 +108,8 @@ def generate_mock_inpatient_claims(beneficiary_df, num_claims=3000):
                 m_new = 12
         thru_dts.append(f"{y:04d}{m_new:02d}{d_new:02d}")
         
-    # Claim payment amount depends on patient risk
-    pmt_amt = (np.random.exponential(scale=3000, size=num_claims) + 1500 * chosen_risks).round(2)
+    # Claim payment amount and primary payer paid amount are stochastic
+    pmt_amt = np.random.exponential(scale=4000, size=num_claims).round(2)
     primary_payer_amt = np.random.choice([0.0, 1000.0], size=num_claims, p=[0.92, 0.08])
     provider_num = np.random.choice([f"PRVDR_{i:03d}" for i in range(1, 50)], size=num_claims)
     
@@ -155,7 +135,7 @@ def download_file(url, output_path):
         print(f"Failed to download {url}: {e}")
         return False
 
-def load_or_create_dataset(use_mock=True, num_bene=2000, num_claims=4000):
+def load_or_create_dataset(use_mock=False, num_bene=2000, num_claims=4000):
     """
     Downloads SynPUF files or generates mock data if offline or requested.
     Returns:
@@ -210,34 +190,21 @@ def load_or_create_dataset(use_mock=True, num_bene=2000, num_claims=4000):
         ip_df = generate_mock_inpatient_claims(bene_df, num_claims)
         
         # Link beneficiary annual summary to their actual generated claims
-        # Inpatient reimbursement is sum of CLM_PMT_AMT per beneficiary
         ip_sum = ip_df.groupby("DESYNPUF_ID")["CLM_PMT_AMT"].sum()
         bene_df["MEDREIMB_IP"] = bene_df["DESYNPUF_ID"].map(ip_sum).fillna(0.0)
-        bene_df["BENRES_IP"] = (bene_df["MEDREIMB_IP"] * 0.10).round(2)
-        bene_df["PPPYMT_IP"] = (bene_df["MEDREIMB_IP"] * 0.05).round(2)
         
-        # Calculate risk scores for outpatient and carrier costs
-        birth_years = pd.to_datetime(bene_df["BENE_BIRTH_DT"], format="%Y%m%d", errors="coerce").dt.year
-        ages = 2008 - birth_years
-        ages = ages.fillna(75).values
+        # Use stochastic coefficients and additive noise to prevent target leakage
+        bene_df["BENRES_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.05, 0.15, size=num_bene) + np.random.exponential(scale=100, size=num_bene)).round(2)
+        bene_df["PPPYMT_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.01, 0.08, size=num_bene) + np.random.exponential(scale=50, size=num_bene)).round(2)
         
-        chronic_cols = [
-            "SP_ALZHDMTA", "SP_CHF", "SP_CHRNKIDN", "SP_CNCR", "SP_COPD", 
-            "SP_DEPRESSN", "SP_DIABETES", "SP_ISCHMCHT", "SP_OSTEOPRS", "SP_RA_OA", "SP_STRKETIA"
-        ]
-        num_chronic = (bene_df[chronic_cols] == 1).sum(axis=1).values
-        sex = bene_df["BENE_SEX_IDENT_CD"].values
-        risk_scores = 1.0 + (ages - 65) * 0.03 + 0.3 * (sex == 2) + 0.8 * num_chronic
-        risk_scores = np.clip(risk_scores, a_min=0.1, a_max=None)
+        # Outpatient and carrier costs are stochastic log-normal or exponential variables with noise
+        bene_df["MEDREIMB_OP"] = np.random.exponential(scale=1500, size=num_bene).round(2)
+        bene_df["BENRES_OP"] = (bene_df["MEDREIMB_OP"] * np.random.uniform(0.10, 0.20, size=num_bene) + np.random.exponential(scale=50, size=num_bene)).round(2)
+        bene_df["PPPYMT_OP"] = (bene_df["MEDREIMB_OP"] * np.random.uniform(0.02, 0.08, size=num_bene)).round(2)
         
-        # Outpatient and carrier costs depend on patient risk
-        bene_df["MEDREIMB_OP"] = (np.random.exponential(scale=1000, size=num_bene) + 500 * risk_scores).round(2)
-        bene_df["BENRES_OP"] = (bene_df["MEDREIMB_OP"] * 0.15).round(2)
-        bene_df["PPPYMT_OP"] = (bene_df["MEDREIMB_OP"] * 0.05).round(2)
-        
-        bene_df["MEDREIMB_CAR"] = (np.random.exponential(scale=500, size=num_bene) + 200 * risk_scores).round(2)
-        bene_df["BENRES_CAR"] = (bene_df["MEDREIMB_CAR"] * 0.20).round(2)
-        bene_df["PPPYMT_CAR"] = (bene_df["MEDREIMB_CAR"] * 0.05).round(2)
+        bene_df["MEDREIMB_CAR"] = np.random.exponential(scale=800, size=num_bene).round(2)
+        bene_df["BENRES_CAR"] = (bene_df["MEDREIMB_CAR"] * np.random.uniform(0.15, 0.25, size=num_bene) + np.random.exponential(scale=20, size=num_bene)).round(2)
+        bene_df["PPPYMT_CAR"] = (bene_df["MEDREIMB_CAR"] * np.random.uniform(0.02, 0.08, size=num_bene)).round(2)
         
         # Save mock dataset to disk for inspection/reuse
         bene_df.to_csv(bene_file_path, index=False)

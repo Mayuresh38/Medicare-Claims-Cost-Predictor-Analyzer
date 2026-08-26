@@ -42,7 +42,8 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(X), 50)
         self.assertEqual(len(y), 50)
         self.assertIn("AGE", X.columns)
-        self.assertIn("TOTAL_CLAIM_PMT", X.columns)
+        self.assertNotIn("TOTAL_CLAIM_PMT", X.columns)
+        self.assertIn("TOTAL_CLAIM_COUNT", X.columns)
 
     def test_saved_models_exist(self):
         models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
