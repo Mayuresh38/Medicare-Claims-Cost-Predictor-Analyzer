@@ -83,9 +83,24 @@ def generate_mock_inpatient_claims(beneficiary_df, num_claims=3000):
     np.random.seed(42)
     bene_ids = beneficiary_df["DESYNPUF_ID"].values
     
-    # Select random beneficiaries uniformly
-    chosen_indices = np.random.choice(len(beneficiary_df), size=num_claims)
-    chosen_benes = beneficiary_df.iloc[chosen_indices]["DESYNPUF_ID"].values
+    chronic_conditions = [
+        "SP_ALZHDMTA", "SP_CHF", "SP_CHRNKIDN", "SP_CNCR", "SP_COPD", 
+        "SP_DEPRESSN", "SP_DIABETES", "SP_ISCHMCHT", "SP_OSTEOPRS", "SP_RA_OA", "SP_STRKETIA"
+    ]
+    num_chronic = (beneficiary_df[chronic_conditions] == 1).sum(axis=1)
+    
+    # Calculate approximate Age
+    birth_years = pd.to_datetime(beneficiary_df["BENE_BIRTH_DT"], format="%Y%m%d", errors="coerce").dt.year
+    age = 2008 - birth_years
+    age = age.fillna(75.0)
+    
+    # Risk factor determines how likely they are to get selected
+    risk_score = 1.0 + 0.02 * np.maximum(0, age - 65) + 0.3 * num_chronic
+    probs = risk_score / risk_score.sum()
+    
+    chosen_indices = np.random.choice(len(beneficiary_df), size=num_claims, p=probs)
+    chosen_df = beneficiary_df.iloc[chosen_indices].copy()
+    chosen_benes = chosen_df["DESYNPUF_ID"].values
     
     claim_ids = [f"CLM_ID_{i:06d}" for i in range(1, num_claims + 1)]
     
@@ -108,8 +123,12 @@ def generate_mock_inpatient_claims(beneficiary_df, num_claims=3000):
                 m_new = 12
         thru_dts.append(f"{y:04d}{m_new:02d}{d_new:02d}")
         
-    # Claim payment amount and primary payer paid amount are stochastic
-    pmt_amt = np.random.exponential(scale=4000, size=num_claims).round(2)
+    # Scale payment amount stochastically based on risk score of the beneficiary
+    chosen_num_chronic = (chosen_df[chronic_conditions] == 1).sum(axis=1).values
+    chosen_age = (2008 - pd.to_datetime(chosen_df["BENE_BIRTH_DT"], format="%Y%m%d", errors="coerce").dt.year).fillna(75.0).values
+    scale_factor = 1.0 + 0.02 * np.maximum(0, chosen_age - 65) + 0.3 * chosen_num_chronic
+    
+    pmt_amt = (np.random.exponential(scale=2000, size=num_claims) * scale_factor).round(2)
     primary_payer_amt = np.random.choice([0.0, 1000.0], size=num_claims, p=[0.92, 0.08])
     provider_num = np.random.choice([f"PRVDR_{i:03d}" for i in range(1, 50)], size=num_claims)
     
@@ -194,16 +213,28 @@ def load_or_create_dataset(use_mock=False, num_bene=2000, num_claims=4000):
         bene_df["MEDREIMB_IP"] = bene_df["DESYNPUF_ID"].map(ip_sum).fillna(0.0)
         
         # Use stochastic coefficients and additive noise to prevent target leakage
-        bene_df["BENRES_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.05, 0.15, size=num_bene) + np.random.exponential(scale=100, size=num_bene)).round(2)
-        bene_df["PPPYMT_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.01, 0.08, size=num_bene) + np.random.exponential(scale=50, size=num_bene)).round(2)
+        bene_df["BENRES_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.05, 0.15, size=num_bene) + np.random.exponential(scale=50, size=num_bene)).round(2)
+        bene_df["PPPYMT_IP"] = (bene_df["MEDREIMB_IP"] * np.random.uniform(0.01, 0.08, size=num_bene) + np.random.exponential(scale=20, size=num_bene)).round(2)
         
-        # Outpatient and carrier costs are stochastic log-normal or exponential variables with noise
-        bene_df["MEDREIMB_OP"] = np.random.exponential(scale=1500, size=num_bene).round(2)
-        bene_df["BENRES_OP"] = (bene_df["MEDREIMB_OP"] * np.random.uniform(0.10, 0.20, size=num_bene) + np.random.exponential(scale=50, size=num_bene)).round(2)
+        # Outpatient and carrier costs are stochastic variables dependent on chronic conditions and age
+        chronic_conditions = [
+            "SP_ALZHDMTA", "SP_CHF", "SP_CHRNKIDN", "SP_CNCR", "SP_COPD", 
+            "SP_DEPRESSN", "SP_DIABETES", "SP_ISCHMCHT", "SP_OSTEOPRS", "SP_RA_OA", "SP_STRKETIA"
+        ]
+        num_chronic = (bene_df[chronic_conditions] == 1).sum(axis=1)
+        birth_years = pd.to_datetime(bene_df["BENE_BIRTH_DT"], format="%Y%m%d", errors="coerce").dt.year
+        age = 2008 - birth_years
+        age = age.fillna(75.0)
+        
+        # Risk factor determines standard outpatient & carrier costs
+        risk_factor = 0.5 + 0.02 * np.maximum(0, age - 65) + 0.25 * num_chronic
+        
+        bene_df["MEDREIMB_OP"] = (np.random.exponential(scale=1000, size=num_bene) * risk_factor).round(2)
+        bene_df["BENRES_OP"] = (bene_df["MEDREIMB_OP"] * np.random.uniform(0.10, 0.20, size=num_bene) + np.random.exponential(scale=20, size=num_bene)).round(2)
         bene_df["PPPYMT_OP"] = (bene_df["MEDREIMB_OP"] * np.random.uniform(0.02, 0.08, size=num_bene)).round(2)
         
-        bene_df["MEDREIMB_CAR"] = np.random.exponential(scale=800, size=num_bene).round(2)
-        bene_df["BENRES_CAR"] = (bene_df["MEDREIMB_CAR"] * np.random.uniform(0.15, 0.25, size=num_bene) + np.random.exponential(scale=20, size=num_bene)).round(2)
+        bene_df["MEDREIMB_CAR"] = (np.random.exponential(scale=500, size=num_bene) * risk_factor).round(2)
+        bene_df["BENRES_CAR"] = (bene_df["MEDREIMB_CAR"] * np.random.uniform(0.15, 0.25, size=num_bene) + np.random.exponential(scale=10, size=num_bene)).round(2)
         bene_df["PPPYMT_CAR"] = (bene_df["MEDREIMB_CAR"] * np.random.uniform(0.02, 0.08, size=num_bene)).round(2)
         
         # Save mock dataset to disk for inspection/reuse

@@ -168,4 +168,4 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     return comparison_df
 
 if __name__ == "__main__":
-    train_and_evaluate_pipeline(use_mock=False, num_bene=1000, num_claims=2000, epochs=80)
+    train_and_evaluate_pipeline(use_mock=True, num_bene=3000, num_claims=6000, epochs=80)
