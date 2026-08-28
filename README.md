@@ -1,11 +1,11 @@
 # Medicare Claims Cost Predictor & Analyzer
 
-An end-to-end prospective patient-level prediction pipeline to model and forecast total annual Medicare costs using **Ridge Regression** and a **Keras Artificial Neural Network (ANN)**, complete with interactive Streamlit dashboard comparison and SHAP explainability.
+An end-to-end prospective patient-level prediction pipeline to model and forecast total annual Medicare costs using a **Keras Artificial Neural Network (ANN)** deep learning regression model, complete with an interactive Streamlit dashboard and SHAP explainability.
 
 ## 🏥 Objectives
 1. **Prospective Feature Engineering**: Predicts annual expenditures using baseline demographics, comorbidities (chronic conditions), and non-monetary prior-year healthcare utilization metrics.
-2. **Standardized Comparison**: Benchmarks a linear regularized model (Ridge Regression with target scaling) against a deep learning model (ANN) under identical 5-Fold Cross-Validation splits.
-3. **Interactive Control & Explainability**: Compares models side-by-side on Streamlit and displays demographic and clinical contribution features in original US Dollars ($) using SHAP waterfall plots.
+2. **Regression Analysis**: Trains and evaluates a deep learning regression model (Keras ANN) under 5-Fold Cross-Validation splits, reporting standard regression evaluation metrics (MAE, RMSE, R² Score, and RMSLE).
+3. **Interactive Control & Explainability**: Computes predictions on Streamlit and displays demographic and clinical feature contributions in original US Dollars ($) using SHAP waterfall plots.
 
 ## 📊 Tabular Predictors & Targets
 - **Predictor Matrix X**:
@@ -22,7 +22,7 @@ An end-to-end prospective patient-level prediction pipeline to model and forecas
    pip install -r requirements.txt
    ```
 2. **Execute Training Pipeline**:
-   Runs 5-fold cross-validation, saves metrics to `models/model_comparison.csv`, and fits final models on the entire dataset.
+   Runs 5-fold cross-validation, saves metrics to `models/model_comparison.csv`, and fits the final Keras ANN model on the entire dataset.
    ```bash
    python -m src.train
    ```

@@ -6,13 +6,11 @@ import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
-from sklearn.linear_model import Ridge
-from sklearn.compose import TransformedTargetRegressor
 from sklearn.preprocessing import StandardScaler
 
 from src.data_loader import load_or_create_dataset
 from src.features import build_tabular_features, PipelineScaler
-from src.models import build_regression_model, build_ann_model
+from src.models import build_ann_model
 
 # Output directory for saved models/scalers
 MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
@@ -32,7 +30,6 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     print("--- Phase 4: Standardized 5-Fold Cross-Validation ---")
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
     
-    ridge_metrics = {'MAE': [], 'RMSE': [], 'R2': [], 'RMSLE': []}
     ann_metrics = {'MAE': [], 'RMSE': [], 'R2': [], 'RMSLE': []}
     
     for fold, (train_idx, val_idx) in enumerate(kf.split(X_tab)):
@@ -51,28 +48,7 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
         y_train_trans = np.log1p(y_train)
         y_val_trans = np.log1p(y_val)
         
-        # 1. Ridge Regression with target scaling
-        ridge = TransformedTargetRegressor(
-            regressor=Ridge(alpha=1.0),
-            func=np.log1p,
-            inverse_func=np.expm1
-        )
-        ridge.fit(X_train_scaled, y_train)
-        
-        ridge_pred = np.maximum(0, ridge.predict(X_val_scaled))
-        
-        # Calculate Ridge metrics
-        r_mae = mean_absolute_error(y_val, ridge_pred)
-        r_rmse = root_mean_squared_error(y_val, ridge_pred)
-        r_r2 = r2_score(y_val, ridge_pred)
-        r_rmsle = np.sqrt(np.mean((np.log1p(y_val) - np.log1p(ridge_pred)) ** 2))
-        
-        ridge_metrics['MAE'].append(r_mae)
-        ridge_metrics['RMSE'].append(r_rmse)
-        ridge_metrics['R2'].append(r_r2)
-        ridge_metrics['RMSLE'].append(r_rmsle)
-        
-        # 2. Keras ANN
+        # Keras ANN
         ann = build_ann_model(input_dim=X_train_scaled.shape[1], learning_rate=0.001)
         
         early_stopping = tf.keras.callbacks.EarlyStopping(
@@ -110,21 +86,12 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
         ann_metrics['R2'].append(a_r2)
         ann_metrics['RMSLE'].append(a_rmsle)
         
-        print(f"  Ridge -> MAE: {r_mae:.2f}, R2: {r_r2:.4f}, RMSLE: {r_rmsle:.4f}")
         print(f"  ANN   -> MAE: {a_mae:.2f}, R2: {a_r2:.4f}, RMSLE: {a_rmsle:.4f}")
 
     print("--- Phase 5: Final Evaluation & Benchmarking ---")
-    avg_ridge = {k: np.mean(v) for k, v in ridge_metrics.items()}
     avg_ann = {k: np.mean(v) for k, v in ann_metrics.items()}
     
     comparison_data = [
-        {
-            "Model": "Ridge Regression",
-            "MAE": round(avg_ridge['MAE'], 2),
-            "RMSE": round(avg_ridge['RMSE'], 2),
-            "R2 Score": round(avg_ridge['R2'], 4),
-            "RMSLE": round(avg_ridge['RMSLE'], 4)
-        },
         {
             "Model": "ANN",
             "MAE": round(avg_ann['MAE'], 2),
@@ -136,10 +103,10 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     comparison_df = pd.DataFrame(comparison_data)
     comparison_df.to_csv(os.path.join(MODELS_DIR, "model_comparison.csv"), index=False)
     
-    print("\nStandardized CV Benchmark Results:")
+    print("\nStandardized CV Results:")
     print(comparison_df)
     
-    print("--- Phase 6: Training Deployed Models on All Data ---")
+    print("--- Phase 6: Training Deployed Model on All Data ---")
     # Fit final feature scaler
     scaler = PipelineScaler()
     X_tab_scaled = scaler.fit_transform(X_tab)
@@ -155,17 +122,6 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     dummy_target_scaler.fit(y.values.reshape(-1, 1))
     with open(os.path.join(MODELS_DIR, "target_scaler.pkl"), "wb") as f:
         pickle.dump(dummy_target_scaler, f)
-        
-    # Train final Ridge model with target scaling
-    final_ridge = TransformedTargetRegressor(
-        regressor=Ridge(alpha=1.0),
-        func=np.log1p,
-        inverse_func=np.expm1
-    )
-    final_ridge.fit(X_tab_scaled, y.values)
-    
-    with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "wb") as f:
-        pickle.dump(final_ridge, f)
         
     # Train final ANN model
     y_trans = np.log1p(y.values)
@@ -199,18 +155,16 @@ def train_and_evaluate_pipeline(use_mock=False, num_bene=3000, num_claims=6000, 
     
     final_ann.save(os.path.join(MODELS_DIR, "ann.keras"))
     
-    # Identify the best model based on cross-validated R2 score
-    best_model_name = "ANN" if avg_ann['R2'] >= avg_ridge['R2'] else "Ridge Regression"
-    best_safe_name = best_model_name.lower().replace(" ", "_")
+    # Save model info
     best_info = {
-        "best_model_name": best_model_name,
-        "best_model_file": f"{best_safe_name}",
-        "type": "keras" if best_model_name == "ANN" else "sklearn"
+        "best_model_name": "ANN",
+        "best_model_file": "ann",
+        "type": "keras"
     }
     with open(os.path.join(MODELS_DIR, "best_model_info.json"), "w") as f:
         json.dump(best_info, f)
         
-    print(f"Training completed successfully! Best model: {best_model_name}")
+    print("Training completed successfully!")
     return comparison_df
 
 if __name__ == "__main__":

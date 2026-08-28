@@ -1,14 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-from sklearn.linear_model import Ridge
-from xgboost import XGBRegressor
 
-def build_regression_model():
-    """
-    Returns a Ridge Regression model.
-    """
-    return Ridge(alpha=1.0)
 
 def build_ann_model(input_dim, learning_rate=0.001, dropout_rate=0.2, units_1=128, units_2=64, units_3=32):
     """

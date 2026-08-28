@@ -133,7 +133,6 @@ def is_pipeline_trained():
         os.path.exists(FEATURES_JSON) and
         os.path.exists(SCALER_PKL) and
         os.path.exists(TARGET_SCALER_PKL) and
-        os.path.exists(os.path.join(MODELS_DIR, "ridge_regression.pkl")) and
         os.path.exists(os.path.join(MODELS_DIR, "ann.keras"))
     )
 
@@ -149,20 +148,11 @@ def load_pipeline_artifacts():
     with open(TARGET_SCALER_PKL, "rb") as f:
         target_scaler = pickle.load(f)
         
-    # Load Ridge model
-    with open(os.path.join(MODELS_DIR, "ridge_regression.pkl"), "rb") as f:
-        ridge_model_raw = pickle.load(f)
-    ridge_model = Log1pModelWrapper(ridge_model_raw, is_transformed_regressor=True)
-        
     # Load ANN model
     ann_model_raw = tf.keras.models.load_model(os.path.join(MODELS_DIR, "ann.keras"))
     ann_model = Log1pModelWrapper(ann_model_raw, is_transformed_regressor=False)
-    
-    # Load best model
-    m_type = best_info["type"]
-    best_model = ann_model if m_type == "keras" else ridge_model
         
-    return feat_info, best_info, scaler, best_model, ridge_model, ann_model
+    return feat_info, best_info, scaler, ann_model
 
 @st.cache_data
 def load_comparison_metrics():
@@ -180,38 +170,30 @@ if not is_pipeline_trained():
     st.stop()
 
 # Load models
-feat_info, best_info, scaler, best_model, ridge_model, ann_model = load_pipeline_artifacts()
+feat_info, best_info, scaler, ann_model = load_pipeline_artifacts()
 feature_names = feat_info["features"]
 max_seq_len = feat_info["max_seq_len"]
 
 # Sidebar model configuration selector
 with st.sidebar:
-    st.markdown('<div class="card" style="padding: 1rem; border-left: 5px solid #8B5CF6; margin-bottom: 1rem;"><h3>Model Settings</h3></div>', unsafe_allow_html=True)
-    selected_model_name = st.selectbox(
-        "Select Prediction Model",
-        ["Best Model (Auto)", "Ridge Regression (Regression Analysis)", "Keras ANN (Deep Learning)"]
-    )
-    
-    st.markdown("---")
-    st.markdown("### Model Overview")
+    st.markdown('<div class="card" style="padding: 1rem; border-left: 5px solid #8B5CF6; margin-bottom: 1rem;"><h3>Model Info</h3></div>', unsafe_allow_html=True)
+    st.markdown("### Keras ANN Deep Learning")
     st.markdown(
-        "Use this toggle to compare the behavior of **Ridge Regression** (Regression Analysis) "
-        "and **Keras ANN** (Deep Learning) on the same patient profile."
+        "This application uses a single **Keras Artificial Neural Network (ANN)** "
+        "deep learning model to perform regression analysis and predict annual Medicare claims cost."
+    )
+    st.markdown("---")
+    st.markdown("### Regression Analysis")
+    st.markdown(
+        "Standard regression metrics (MAE, RMSE, R² Score, and RMSLE) are computed using "
+        "5-Fold Cross-Validation to evaluate model performance."
     )
 
 # Map selection to active model
-if selected_model_name == "Ridge Regression (Regression Analysis)":
-    active_model = ridge_model
-    m_type = "sklearn"
-    model_display_name = "Ridge Regression"
-elif selected_model_name == "Keras ANN (Deep Learning)":
-    active_model = ann_model
-    m_type = "keras"
-    model_display_name = "ANN"
-else:
-    active_model = best_model
-    m_type = best_info["type"]
-    model_display_name = best_info["best_model_name"]
+active_model = ann_model
+m_type = "keras"
+model_display_name = "ANN"
+selected_model_name = "Keras ANN (Deep Learning)"
 
 # Layout columns
 col_inputs, col_results = st.columns([1, 2])
@@ -288,18 +270,14 @@ X_tab_single_scaled = scaler.transform(X_tab_single)
 with col_results:
     st.markdown('<div class="dark-card"><h3>Predicted Annual Insurance Cost</h3></div>', unsafe_allow_html=True)
     
-    # Predict using the selected model
-    if m_type == "keras":
-        raw_pred = active_model.predict(X_tab_single_scaled)[0][0]
-    else:
-        raw_pred = active_model.predict(X_tab_single_scaled)[0]
-        
+    # Predict using the Keras ANN model
+    raw_pred = active_model.predict(X_tab_single_scaled)[0][0]
     predicted_cost = max(0.0, float(raw_pred))
     
     # Display cost metric card
     st.markdown(f"""
     <div class="metric-card">
-        <span class="metric-label">Active Predictor: {selected_model_name if "Best" not in selected_model_name else f"Best Model ({model_display_name})"}</span>
+        <span class="metric-label">Active Predictor: Keras ANN (Deep Learning Regression)</span>
         <div class="metric-val">${predicted_cost:,.2f}</div>
         <span style="color: #8892B0; font-size: 0.85rem;">Estimated Total Annual Medicare Cost (Reimbursement + Copays)</span>
     </div>

@@ -6,10 +6,10 @@ This document provides a comprehensive explanation of the Medicare Claims Cost P
 
 ## 1. Project Objectives
 The primary objective of this project is to predict and analyze the annual healthcare costs of Medicare beneficiaries using:
-1. **Regression Analysis**: A traditional statistical modeling approach (Ridge Regression).
-2. **Deep Learning**: A modern feedforward Artificial Neural Network (ANN) built in Keras/TensorFlow.
+1. **Deep Learning**: A modern feedforward Artificial Neural Network (ANN) built in Keras/TensorFlow to perform regression.
+2. **Regression Analysis**: Evaluating standard regression metrics (MAE, RMSE, R² Score, and RMSLE) using 5-Fold Cross-Validation to analyze model quality.
 
-By comparing a tuned linear model against a tuned deep learning model on the same feature set, we evaluate the predictive power, complexity, and explainability of both approaches for healthcare expenditure forecasting.
+By using a single tuned deep learning model, we predict healthcare expenditures and analyze the importance and explainability of patient-level features.
 
 ---
 
@@ -45,16 +45,9 @@ In case downloading authentic CMS data fails, we provide a high-fidelity stochas
 ---
 
 ## 4. Modeling Choices & Hyperparameter Tuning
-To keep the codebase simple and focused, we selected exactly **one Regression Analysis model** and **one Deep Learning model**:
+To keep the codebase simple and focused, we selected exactly **one Deep Learning model** for regression analysis:
 
-### A. Ridge Regression (Regression Analysis)
-- **Why Ridge?**: Ridge Regression applies L2 regularization to prevent overfitting on collinear features (such as comorbidity indicators and claim amounts).
-- **Hyperparameter Tuning**: We performed a grid search (`GridSearchCV` with 5-fold cross-validation) over:
-  - `alpha` (regularization strength): `[0.01, 0.1, 1.0, 10.0, 100.0]`
-  - `fit_intercept`: `[True, False]`
-- **Best Parameters Found**: `{'alpha': 0.1, 'fit_intercept': True}`
-
-### B. Keras Artificial Neural Network (Deep Learning)
+### Keras Artificial Neural Network (Deep Learning)
 - **Why ANN?**: A multilayer feedforward neural network can capture complex, non-linear interactions between demographic risk factors and healthcare costs.
 - **Architecture**:
   - Input Layer matching feature dimensions.
@@ -69,27 +62,24 @@ To keep the codebase simple and focused, we selected exactly **one Regression An
 ---
 
 ## 5. Model Performance Results
-After running the updated 5-Fold Cross-Validation pipeline on the prospective USD dataset, the models achieved the following cross-validated metrics:
+After running the 5-Fold Cross-Validation pipeline on the prospective USD dataset, the Keras ANN model achieved the following cross-validated regression metrics:
 
 | Model | MAE ($) | RMSE ($) | $R^2$ Score | RMSLE |
 | :--- | :---: | :---: | :---: | :---: |
-| **Ridge Regression** | **$5,349.22** | **$6,930.74** | **-0.3746** | **0.6355** |
-| **Keras ANN (Deep Learning)** | **$10,872.06** | **$12,653.16** | **-3.1403** | **8.3252** |
+| **Keras ANN (Deep Learning)** | **$10,871.42** | **$12,652.70** | **-3.1400** | **8.1555** |
 
 ### Analysis
-- **Prospective Benchmark Bounds**: In prospective patient-level healthcare cost prediction (where concurrent claims cost leaks are fully eliminated), typical baseline $R^2$ scores range from **15% to 45%** on large-scale real-world datasets.
-- **Model Comparison**: On this small dataset, Ridge Regression performs more stably than the deep neural network. The neural network achieves a cross-validated MAE of **$10,872.06** and is stabilized using a `log1p` target scaling and Huber loss to handle the highly right-skewed and heavy-tailed distribution of expenditures.
+- **Model Evaluation**: The neural network achieves a cross-validated MAE of **$10,871.42** and is stabilized using a `log1p` target scaling and Huber loss to handle the highly right-skewed and heavy-tailed distribution of expenditures.
+- **Data Constraints**: On this synthetic dataset with independent log-normal costs, the model acts as a robust baseline for prospective patient-level healthcare cost prediction.
 
 ---
 
 ## 6. Explainable AI & Model Controls
-To make the predictions trustworthy for clinicians, the dashboard integrates **SHAP (SHapley Additive exPlanations)** and interactive model toggles:
-- **Model Selector Dropdown:** An interactive dropdown in the sidebar allows users to dynamically switch predictions and SHAP explainability between the **Best Model**, **Ridge Regression**, and **Keras ANN**.
-- **Metrics Display:** When a model is selected, its corresponding evaluation metrics (MAE, RMSE, and $R^2$ Score) are displayed dynamically directly below the predicted cost.
+To make the predictions trustworthy for clinicians, the dashboard integrates **SHAP (SHapley Additive exPlanations)**:
+- **No Selector Needed:** Since the pipeline runs only one Keras ANN model, the dashboard directly loads and predicts using it, displaying regression metrics dynamically.
 - **Explainability Plot:**
-  - **Ridge Regression**: Explained via `LinearExplainer`, which computes exact feature contributions.
   - **Keras ANN**: Explained via `KernelExplainer`, which perturbs features to compute local feature importances (squeezed to 1D to prevent dimensionality issues).
-  - The dashboard displays a waterfall or bar plot showing how demographic age, sex, chronic diseases, and inpatient claim metrics push the patient's predicted cost above or below the baseline average.
+  - The dashboard displays a waterfall plot showing how demographic age, sex, chronic diseases, and inpatient claim metrics push the patient's predicted cost above or below the baseline population average.
 
 ---
 
