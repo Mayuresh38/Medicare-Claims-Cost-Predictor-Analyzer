@@ -295,11 +295,13 @@ with col_results:
             st.markdown("#### 📈 Model Cross-Validation Performance Metrics")
             if "RMSLE" in comp_df.columns:
                 rmsle_val = row.iloc[0].get("RMSLE", 0.0)
-                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-                m_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
-                m_col2.metric("Root Mean Squared Error (RMSE)", f"${rmse_val:,.2f}")
-                m_col3.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
-                m_col4.metric("RMSLE", f"{rmsle_val:.4f}")
+                # Use a 2x2 grid to prevent values from being truncated on narrow screens
+                row1_col1, row1_col2 = st.columns(2)
+                row2_col1, row2_col2 = st.columns(2)
+                row1_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
+                row1_col2.metric("Root Mean Squared Error (RMSE)", f"${rmse_val:,.2f}")
+                row2_col1.metric("R² Score (Variance Explained)", f"{r2_val * 100:.2f}%")
+                row2_col2.metric("RMSLE", f"{rmsle_val:.4f}")
             else:
                 m_col1, m_col2, m_col3 = st.columns(3)
                 m_col1.metric("Mean Absolute Error (MAE)", f"${mae_val:,.2f}")
